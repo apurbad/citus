@@ -2198,8 +2198,7 @@ CitusCopyDestReceiverStartup(DestReceiver *dest, int operation,
 	copyDest->tupleDescriptor = inputTupleDescriptor;
 
 	/* load the list of shards and verify that we have shards to copy into */
-	List *shardIntervalList = LoadShardIntervalList(tableId);
-	if (shardIntervalList == NIL)
+	if (cacheEntry->shardIntervalArrayLength == 0)
 	{
 		if (IsCitusTableTypeCacheEntry(cacheEntry, HASH_DISTRIBUTED))
 		{
