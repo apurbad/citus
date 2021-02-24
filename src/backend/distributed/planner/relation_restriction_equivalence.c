@@ -601,10 +601,7 @@ GenerateAllAttributeEquivalences(PlannerRestrictionContext *plannerRestrictionCo
 	List *joinRestrictionAttributeEquivalenceList =
 		GenerateAttributeEquivalencesForJoinRestrictions(joinRestrictionContext);
 
-	List *allAttributeEquivalenceList = NIL;
-
-
-	allAttributeEquivalenceList = list_concat(
+	List *allAttributeEquivalenceList = list_concat(
 		relationRestrictionAttributeEquivalenceList,
 		joinRestrictionAttributeEquivalenceList);
 
@@ -1656,22 +1653,27 @@ ContainsUnionSubquery(Query *queryTree)
 {
 	List *allUnionQueries = FetchAllUnionQueries(queryTree);
 
-	return list_length(allUnionQueries);
+	return list_length(allUnionQueries) > 0;
 }
 
 
+/*
+ * add comment
+ */
 static List *
 FetchAllUnionQueries(Query *query)
 {
 	List *unionAllQueries = NIL;
 
-	query_tree_walker(query, IsUnionSubqueryWalker, &unionAllQueries,
-					  0);
+	query_tree_walker(query, IsUnionSubqueryWalker, &unionAllQueries, 0);
 
 	return unionAllQueries;
 }
 
 
+/*
+ * add comment
+ */
 static bool
 IsUnionSubqueryWalker(Node *node, List **unionAllQueries)
 {
@@ -1704,6 +1706,7 @@ IsUnionSubqueryWalker(Node *node, List **unionAllQueries)
 bool
 IsUnionSubquery(Query *queryTree)
 {
+	/* directly check the query */
 	if (queryTree->setOperations != NULL)
 	{
 		SetOperationStmt *setOperationStatement =
@@ -1720,6 +1723,10 @@ IsUnionSubquery(Query *queryTree)
 
 		return true;
 	}
+
+	/*
+	 * We qualify SELECT * FROM (SELECT ... UNION [ALL] SELECT ..) as union subquery.
+	 */
 
 	List *rangeTableList = queryTree->rtable;
 	List *joinTreeTableIndexList = NIL;
