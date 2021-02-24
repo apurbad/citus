@@ -1455,9 +1455,11 @@ RegularTable(Oid relationId)
  * After copying local data into the distributed table, the local data remains
  * in place and should be truncated at a later time.
  */
+#include "unistd.h"
 static void
 CopyLocalDataIntoShards(Oid distributedRelationId)
 {
+	sleep(1);
 	/* take an ExclusiveLock to block all operations except SELECT */
 	Relation distributedRelation = table_open(distributedRelationId, ExclusiveLock);
 
