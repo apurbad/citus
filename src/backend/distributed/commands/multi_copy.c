@@ -2229,6 +2229,7 @@ CitusCopyDestReceiverStartup(DestReceiver *dest, int operation,
 								  relationName)));
 	}
 
+	List *shardIntervalList = LoadShardIntervalList(tableId);
 	/* prevent concurrent placement changes and non-commutative DML statements */
 	LockShardListMetadata(shardIntervalList, ShareLock);
 
