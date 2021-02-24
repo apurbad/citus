@@ -585,9 +585,25 @@ DeferErrorIfUnsupportedSubqueryPushdown(Query *originalQuery,
 	 *          return the partition key at the same position
 	 *    (ii)  Else, check whether all relations joined on the partition key or not
 	 */
-	if (ContainsUnionSubquery(originalQuery))
+	if (originalQuery->setOperations != NULL)
 	{
-		if (!SafeToPushdownUnionSubquery(plannerRestrictionContext))
+		SetOperationStmt *setOperationStatement =
+			(SetOperationStmt *) originalQuery->setOperations;
+
+		/*
+		 * Note that the set operation tree is traversed elsewhere for ensuring
+		 * that we only support UNIONs.
+		 */
+		if (setOperationStatement->op != SETOP_UNION)
+		{
+			return DeferredError(ERRCODE_FEATURE_NOT_SUPPORTED,
+								 "Not union",
+								 "not union",
+								 NULL);
+		}
+
+		List *restrictions = NIL;
+		if (!SafeToPushdownUnionSubquery(plannerRestrictionContext, &restrictions))
 		{
 			return DeferredError(ERRCODE_FEATURE_NOT_SUPPORTED,
 								 "cannot pushdown the subquery since not all subqueries "
@@ -599,7 +615,7 @@ DeferErrorIfUnsupportedSubqueryPushdown(Query *originalQuery,
 								 NULL);
 		}
 	}
-	else if (!RestrictionEquivalenceForPartitionKeys(plannerRestrictionContext))
+	else if (!RestrictionEquivalenceForPartitionKeys(plannerRestrictionContext, originalQuery))
 	{
 		return DeferredError(ERRCODE_FEATURE_NOT_SUPPORTED,
 							 "complex joins are only supported when all distributed tables are "

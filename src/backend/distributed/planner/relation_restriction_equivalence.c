@@ -151,6 +151,7 @@ static Index RelationRestrictionPartitionKeyIndex(RelationRestriction *
 												  relationRestriction);
 static bool AllRelationsInRestrictionContextColocated(RelationRestrictionContext *
 													  restrictionContext);
+static PlannerRestrictionContext * FilterPlannerRestrictionForRteIdentities(PlannerRestrictionContext *plannerRestrictionContext, Relids rteIdentities);
 static bool IsNotSafeRestrictionToRecursivelyPlan(Node *node);
 static JoinRestrictionContext * FilterJoinRestrictionContext(
 	JoinRestrictionContext *joinRestrictionContext, Relids
@@ -187,16 +188,30 @@ AllDistributionKeysInQueryAreEqual(Query *originalQuery,
 	}
 
 	bool restrictionEquivalenceForPartitionKeys =
-		RestrictionEquivalenceForPartitionKeys(plannerRestrictionContext);
+		RestrictionEquivalenceForPartitionKeys(plannerRestrictionContext, originalQuery);
 	if (restrictionEquivalenceForPartitionKeys)
 	{
 		return true;
 	}
 
-	if (originalQuery->setOperations || ContainsUnionSubquery(originalQuery))
+	if (originalQuery->setOperations)
 	{
-		return SafeToPushdownUnionSubquery(plannerRestrictionContext);
+		SetOperationStmt *setOperationStatement =
+			(SetOperationStmt *) originalQuery->setOperations;
+
+		/*
+		 * Note that the set operation tree is traversed elsewhere for ensuring
+		 * that we only support UNIONs.
+		 */
+		if (setOperationStatement->op != SETOP_UNION)
+		{
+			return false;
+		}
+
+		List *restrictions = NIL;
+		return SafeToPushdownUnionSubquery(plannerRestrictionContext, &restrictions);
 	}
+
 
 	return false;
 }
@@ -245,7 +260,8 @@ ContextContainsLocalRelation(RelationRestrictionContext *restrictionContext)
  * safe to push down, the function would fail to return true.
  */
 bool
-SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext)
+SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext,
+							List **allAttributeEquivalenceList)
 {
 	RelationRestrictionContext *restrictionContext =
 		plannerRestrictionContext->relationRestrictionContext;
@@ -272,7 +288,7 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
 		List *appendRelList = relationPlannerRoot->append_rel_list;
 		Var *varToBeAdded = NULL;
 		TargetEntry *targetEntryToAdd = NULL;
-
+elog(INFO, "rte: %d", relationRestriction->index);
 		/*
 		 * We first check whether UNION ALLs are pulled up or not. Note that Postgres
 		 * planner creates AppendRelInfos per each UNION ALL query that is pulled up.
@@ -285,7 +301,7 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
 										   relationRestriction->relationId,
 										   relationRestriction->index,
 										   &partitionKeyIndex);
-
+elog(INFO, "partitionKeyIndex: %d", partitionKeyIndex);
 			/* union does not have partition key in the target list */
 			if (partitionKeyIndex == 0)
 			{
@@ -331,10 +347,13 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
 		}
 		else if (unionQueryPartitionKeyIndex != partitionKeyIndex)
 		{
+			elog(INFO, "skipped to add");
 			continue;
 		}
 
 		Assert(varToBeAdded != NULL);
+		elog(INFO, "added: %s", nodeToString(varToBeAdded));
+
 		AddToAttributeEquivalenceClass(&attributeEquivalence, relationPlannerRoot,
 									   varToBeAdded);
 	}
@@ -350,15 +369,17 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
 		GenerateAttributeEquivalencesForRelationRestrictions(restrictionContext);
 	List *joinRestrictionAttributeEquivalenceList =
 		GenerateAttributeEquivalencesForJoinRestrictions(joinRestrictionContext);
+elog(INFO, "rel count: %d", list_length(relationRestrictionAttributeEquivalenceList));
+elog(INFO, "joinn count: %d", list_length(joinRestrictionAttributeEquivalenceList));
 
-	List *allAttributeEquivalenceList =
+	*allAttributeEquivalenceList =
 		list_concat(relationRestrictionAttributeEquivalenceList,
 					joinRestrictionAttributeEquivalenceList);
 
-	allAttributeEquivalenceList = lappend(allAttributeEquivalenceList,
+	*allAttributeEquivalenceList = lappend(*allAttributeEquivalenceList,
 										  attributeEquivalence);
 
-	if (!EquivalenceListContainsRelationsEquality(allAttributeEquivalenceList,
+	if (!EquivalenceListContainsRelationsEquality(*allAttributeEquivalenceList,
 												  restrictionContext))
 	{
 		/* cannot confirm equality for all distribution colums */
@@ -489,7 +510,8 @@ FindUnionAllVar(PlannerInfo *root, List *appendRelList, Oid relationOid,
  * and GenerateAttributeEquivalencesForJoinRestrictions().
  */
 bool
-RestrictionEquivalenceForPartitionKeys(PlannerRestrictionContext *restrictionContext)
+RestrictionEquivalenceForPartitionKeys(PlannerRestrictionContext *restrictionContext,
+									   Query *query)
 {
 	if (ContextContainsLocalRelation(restrictionContext->relationRestrictionContext))
 	{
@@ -501,7 +523,7 @@ RestrictionEquivalenceForPartitionKeys(PlannerRestrictionContext *restrictionCon
 		return true;
 	}
 
-	List *attributeEquivalenceList = GenerateAllAttributeEquivalences(restrictionContext);
+	List *attributeEquivalenceList = GenerateAllAttributeEquivalences(restrictionContext, query);
 
 	return RestrictionEquivalenceForPartitionKeysViaEquivalences(restrictionContext,
 																 attributeEquivalenceList);
@@ -568,33 +590,54 @@ ContainsMultipleDistributedRelations(PlannerRestrictionContext *
 	return true;
 }
 
-
+static List *
+GenerateAttribueEquivalancesForSetOperations(List *unionQueries,
+											 PlannerRestrictionContext *plannerRestrictionContext);
+static Relids AllRteIdentities(List *unionQueries);
+static PlannerRestrictionContext *
+FilterOutPlannerRestrictionForRteIdentities(PlannerRestrictionContext *context, Relids rteIdentities);
 /*
  * GenerateAllAttributeEquivalences gets the planner restriction context and returns
  * the list of all attribute equivalences based on both join restrictions and relation
  * restrictions.
  */
 List *
-GenerateAllAttributeEquivalences(PlannerRestrictionContext *plannerRestrictionContext)
+GenerateAllAttributeEquivalences(PlannerRestrictionContext *plannerRestrictionContext,
+								 Query *originalQuery)
 {
-	RelationRestrictionContext *relationRestrictionContext =
-		plannerRestrictionContext->relationRestrictionContext;
-	JoinRestrictionContext *joinRestrictionContext =
-		plannerRestrictionContext->joinRestrictionContext;
+	RelationRestrictionContext *relationRestrictionContext = NULL;
+	JoinRestrictionContext *joinRestrictionContext = NULL;
 
 	/* reset the equivalence id counter per call to prevent overflows */
 	attributeEquivalenceId = 1;
 
-	/*List *unionQueries = FetchAllUnionQueries(originalQuery); */
+	List *unionQueries = FetchAllUnionQueries(originalQuery);
+	Relids allRelationRteIdentitiesOnUnionQueries = AllRteIdentities(unionQueries);
 
-/*	List *setOperationRestrictionList = */
-/*		GenerateAttribueEquivalancesForSetOperations(unionQueries, */
-/*													 plannerRestrictionContext); */
-/*	Query *queryWithAllUnionRtes = GenerateFakeQuery(unionQueries); */
+	PlannerRestrictionContext *unionContext =
+		FilterPlannerRestrictionForRteIdentities(plannerRestrictionContext, allRelationRteIdentitiesOnUnionQueries);
 
-/*	List *nonUnionPlannerRestrictions = */
-/*		FilterPlannerRestrictionForQuery(plannerRestrictionContext, */
-/*										 queryWithAllUnionRtes); */
+	List *setOperationRestrictionList =
+		GenerateAttribueEquivalancesForSetOperations(unionQueries, unionContext);
+
+
+	if (setOperationRestrictionList != NIL)
+	{
+		PlannerRestrictionContext *nonUnionPlannerRestrictions =
+			FilterOutPlannerRestrictionForRteIdentities(plannerRestrictionContext, allRelationRteIdentitiesOnUnionQueries);
+		relationRestrictionContext =
+				nonUnionPlannerRestrictions->relationRestrictionContext;
+			joinRestrictionContext =
+					nonUnionPlannerRestrictions->joinRestrictionContext;
+	}
+	else
+	{
+		relationRestrictionContext =
+			plannerRestrictionContext->relationRestrictionContext;
+		joinRestrictionContext =
+			plannerRestrictionContext->joinRestrictionContext;
+
+	}
 
 	List *relationRestrictionAttributeEquivalenceList =
 		GenerateAttributeEquivalencesForRelationRestrictions(relationRestrictionContext);
@@ -605,7 +648,87 @@ GenerateAllAttributeEquivalences(PlannerRestrictionContext *plannerRestrictionCo
 		relationRestrictionAttributeEquivalenceList,
 		joinRestrictionAttributeEquivalenceList);
 
-	return allAttributeEquivalenceList;
+	return list_concat(allAttributeEquivalenceList, setOperationRestrictionList);
+}
+
+
+static PlannerRestrictionContext *
+FilterOutPlannerRestrictionForRteIdentities(PlannerRestrictionContext *context, Relids rteIdentities)
+{
+	ListCell *relationRestrictionCell = NULL;
+	Relids filteredOutRteIdentities = NULL;
+
+	foreach(relationRestrictionCell, context->relationRestrictionContext->relationRestrictionList)
+	{
+		RelationRestriction *relationRestriction =
+			(RelationRestriction *) lfirst(relationRestrictionCell);
+
+		int rteIdentity = GetRTEIdentity(relationRestriction->rte);
+
+		if (!bms_is_member(rteIdentity, rteIdentities))
+		{
+			filteredOutRteIdentities = bms_add_member(filteredOutRteIdentities, rteIdentity);
+		}
+
+	}
+
+
+	return FilterPlannerRestrictionForRteIdentities(context, filteredOutRteIdentities);
+}
+
+
+
+static List *
+GenerateAttribueEquivalancesForSetOperations(List *unionQueries,
+											 PlannerRestrictionContext *plannerRestrictionContext)
+{
+
+	List *allUnionRestrictions = NIL;
+	Query *unionQuery = NULL;
+	foreach_ptr(unionQuery, unionQueries)
+	{
+		List *restrictions = NIL;
+		bool safe =
+			SafeToPushdownUnionSubquery(FilterPlannerRestrictionForQuery(plannerRestrictionContext, unionQuery), &restrictions);
+
+		elog(INFO, "safe: %d", safe);
+
+		StringInfo subqueryString = makeStringInfo();
+
+		pg_get_query_def(copyObject(unionQuery), subqueryString);
+
+		ereport(INFO, (errmsg("%s",subqueryString->data)));
+
+		if (!safe)
+		{
+			return NIL;
+		}
+
+		allUnionRestrictions = list_concat(allUnionRestrictions, restrictions);
+	}
+
+	return allUnionRestrictions;
+}
+
+static Relids
+AllRteIdentities(List *unionQueries)
+{
+	Relids allRelIds = NULL;
+	Query *unionQuery = NULL;
+	foreach_ptr(unionQuery, unionQueries)
+	{
+		Relids relids = QueryRteIdentities(unionQuery);
+
+		int currentRTEIndex = -1;
+
+		while ((currentRTEIndex = bms_next_member(relids, currentRTEIndex)) >= 0)
+		{
+			allRelIds = bms_add_member(allRelIds,currentRTEIndex);
+		}
+	}
+
+
+	return allRelIds;
 }
 
 
@@ -1374,6 +1497,7 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 {
 	List *appendRelList = root->append_rel_list;
 	ListCell *appendRelCell = NULL;
+	int previousParentRelId = varToBeAdded->varno;
 
 	/* iterate on the queries that are part of UNION ALL subqueries */
 	foreach(appendRelCell, appendRelList)
@@ -1388,6 +1512,10 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		{
 			continue;
 		}
+		else if (appendRelInfo->child_relid == previousParentRelId)
+		continue;
+
+		previousParentRelId  = appendRelInfo->parent_relid ;
 		int rtoffset = RangeTableOffsetCompat(root, appendRelInfo);
 
 		/* set the varno accordingly for this specific child */
@@ -1893,16 +2021,22 @@ FilterPlannerRestrictionForQuery(PlannerRestrictionContext *plannerRestrictionCo
 {
 	Relids queryRteIdentities = QueryRteIdentities(query);
 
+	return FilterPlannerRestrictionForRteIdentities(plannerRestrictionContext, queryRteIdentities);
+}
+
+static PlannerRestrictionContext *
+FilterPlannerRestrictionForRteIdentities(PlannerRestrictionContext *plannerRestrictionContext, Relids rteIdentities)
+{
 	RelationRestrictionContext *relationRestrictionContext =
 		plannerRestrictionContext->relationRestrictionContext;
 	JoinRestrictionContext *joinRestrictionContext =
 		plannerRestrictionContext->joinRestrictionContext;
 
 	RelationRestrictionContext *filteredRelationRestrictionContext =
-		FilterRelationRestrictionContext(relationRestrictionContext, queryRteIdentities);
+		FilterRelationRestrictionContext(relationRestrictionContext, rteIdentities);
 
 	JoinRestrictionContext *filtererdJoinRestrictionContext =
-		FilterJoinRestrictionContext(joinRestrictionContext, queryRteIdentities);
+		FilterJoinRestrictionContext(joinRestrictionContext, rteIdentities);
 
 	/* allocate the filtered planner restriction context and set all the fields */
 	PlannerRestrictionContext *filteredPlannerRestrictionContext = palloc0(
@@ -1928,6 +2062,7 @@ FilterPlannerRestrictionForQuery(PlannerRestrictionContext *plannerRestrictionCo
 		filtererdJoinRestrictionContext;
 
 	return filteredPlannerRestrictionContext;
+
 }
 
 

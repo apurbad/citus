@@ -21,17 +21,20 @@ extern bool AllDistributionKeysInQueryAreEqual(Query *originalQuery,
 											   PlannerRestrictionContext *
 											   plannerRestrictionContext);
 extern bool SafeToPushdownUnionSubquery(PlannerRestrictionContext *
-										plannerRestrictionContext);
+										plannerRestrictionContext,
+										List **allAttributeEquivalenceList);
 extern bool ContainsUnionSubquery(Query *queryTree);
 extern bool IsUnionSubquery(Query *queryTree);
 extern bool RestrictionEquivalenceForPartitionKeys(PlannerRestrictionContext *
-												   plannerRestrictionContext);
+												   plannerRestrictionContext,
+												   Query *query);
 bool RestrictionEquivalenceForPartitionKeysViaEquivalences(PlannerRestrictionContext *
 														   plannerRestrictionContext,
 														   List *
 														   allAttributeEquivalenceList);
 extern List * GenerateAllAttributeEquivalences(PlannerRestrictionContext *
-											   plannerRestrictionContext);
+											   plannerRestrictionContext,
+											   Query *originalQuery);
 extern uint32 UniqueRelationCount(RelationRestrictionContext *restrictionContext,
 								  CitusTableType tableType);
 

@@ -104,7 +104,7 @@ CreateColocatedJoinChecker(Query *subquery, PlannerRestrictionContext *restricti
 	RelationRestrictionContext *anchorRelationRestrictionContext =
 		anchorPlannerRestrictionContext->relationRestrictionContext;
 	List *anchorRestrictionEquivalences =
-		GenerateAllAttributeEquivalences(anchorPlannerRestrictionContext);
+		GenerateAllAttributeEquivalences(anchorPlannerRestrictionContext, anchorSubquery);
 
 	/* fill the non colocated planning context */
 	colocatedJoinChecker.subquery = subquery;
