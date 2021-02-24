@@ -2164,7 +2164,7 @@ ShardIntervalListHasLocalPlacements(List *shardIntervalList)
 	return false;
 }
 
-
+#include "utils/inval.h"
 /*
  * CitusCopyDestReceiverStartup implements the rStartup interface of
  * CitusCopyDestReceiver. It opens the relation, acquires necessary
@@ -2190,6 +2190,9 @@ CitusCopyDestReceiverStartup(DestReceiver *dest, int operation,
 	const char *delimiterCharacter = "\t";
 	const char *nullPrintCharacter = "\\N";
 
+	CommandCounterIncrement();
+	AcceptInvalidationMessages();
+
 	/* look up table properties */
 	Relation distributedRelation = table_open(tableId, RowExclusiveLock);
 	CitusTableCacheEntry *cacheEntry = GetCitusTableCacheEntry(tableId);
@@ -2198,7 +2201,9 @@ CitusCopyDestReceiverStartup(DestReceiver *dest, int operation,
 	copyDest->tupleDescriptor = inputTupleDescriptor;
 
 	/* load the list of shards and verify that we have shards to copy into */
-	if (cacheEntry->shardIntervalArrayLength == 0)
+
+	List *shardIntervalList = LoadShardIntervalList(tableId);
+	if (shardIntervalList == NIL)
 	{
 		if (IsCitusTableTypeCacheEntry(cacheEntry, HASH_DISTRIBUTED))
 		{
@@ -2229,7 +2234,6 @@ CitusCopyDestReceiverStartup(DestReceiver *dest, int operation,
 								  relationName)));
 	}
 
-	List *shardIntervalList = LoadShardIntervalList(tableId);
 	/* prevent concurrent placement changes and non-commutative DML statements */
 	LockShardListMetadata(shardIntervalList, ShareLock);
 
