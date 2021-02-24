@@ -133,6 +133,8 @@ static bool AttributeEquivalencesAreEqual(AttributeEquivalenceClass *
 										  firstAttributeEquivalence,
 										  AttributeEquivalenceClass *
 										  secondAttributeEquivalence);
+static List * FetchAllUnionQueries(Query *query);
+static bool IsUnionSubqueryWalker(Node *node, List **unionAllQueries);
 static AttributeEquivalenceClass * GenerateCommonEquivalence(List *
 															 attributeEquivalenceList,
 															 RelationRestrictionContext *
@@ -580,16 +582,29 @@ GenerateAllAttributeEquivalences(PlannerRestrictionContext *plannerRestrictionCo
 	JoinRestrictionContext *joinRestrictionContext =
 		plannerRestrictionContext->joinRestrictionContext;
 
-
 	/* reset the equivalence id counter per call to prevent overflows */
 	attributeEquivalenceId = 1;
+
+	/*List *unionQueries = FetchAllUnionQueries(originalQuery); */
+
+/*	List *setOperationRestrictionList = */
+/*		GenerateAttribueEquivalancesForSetOperations(unionQueries, */
+/*													 plannerRestrictionContext); */
+/*	Query *queryWithAllUnionRtes = GenerateFakeQuery(unionQueries); */
+
+/*	List *nonUnionPlannerRestrictions = */
+/*		FilterPlannerRestrictionForQuery(plannerRestrictionContext, */
+/*										 queryWithAllUnionRtes); */
 
 	List *relationRestrictionAttributeEquivalenceList =
 		GenerateAttributeEquivalencesForRelationRestrictions(relationRestrictionContext);
 	List *joinRestrictionAttributeEquivalenceList =
 		GenerateAttributeEquivalencesForJoinRestrictions(joinRestrictionContext);
 
-	List *allAttributeEquivalenceList = list_concat(
+	List *allAttributeEquivalenceList = NIL;
+
+
+	allAttributeEquivalenceList = list_concat(
 		relationRestrictionAttributeEquivalenceList,
 		joinRestrictionAttributeEquivalenceList);
 
@@ -1639,6 +1654,73 @@ AttributeEquivalencesAreEqual(AttributeEquivalenceClass *firstAttributeEquivalen
 bool
 ContainsUnionSubquery(Query *queryTree)
 {
+	List *allUnionQueries = FetchAllUnionQueries(queryTree);
+
+	return list_length(allUnionQueries);
+}
+
+
+static List *
+FetchAllUnionQueries(Query *query)
+{
+	List *unionAllQueries = NIL;
+
+	query_tree_walker(query, IsUnionSubqueryWalker, &unionAllQueries,
+					  0);
+
+	return unionAllQueries;
+}
+
+
+static bool
+IsUnionSubqueryWalker(Node *node, List **unionAllQueries)
+{
+	if (node == NULL)
+	{
+		return false;
+	}
+
+	if (IsA(node, Query))
+	{
+		Query *query = (Query *) node;
+		if (IsUnionSubquery(query))
+		{
+			*unionAllQueries = lappend(*unionAllQueries, query);
+
+			return false;
+		}
+
+		/* we are done */
+		return query_tree_walker(query, IsUnionSubqueryWalker, unionAllQueries,
+								 0);
+	}
+
+	/* go deep down */
+	return expression_tree_walker(node, IsUnionSubqueryWalker,
+								  (void *) unionAllQueries);
+}
+
+
+bool
+IsUnionSubquery(Query *queryTree)
+{
+	if (queryTree->setOperations != NULL)
+	{
+		SetOperationStmt *setOperationStatement =
+			(SetOperationStmt *) queryTree->setOperations;
+
+		/*
+		 * Note that the set operation tree is traversed elsewhere for ensuring
+		 * that we only support UNIONs.
+		 */
+		if (setOperationStatement->op != SETOP_UNION)
+		{
+			return false;
+		}
+
+		return true;
+	}
+
 	List *rangeTableList = queryTree->rtable;
 	List *joinTreeTableIndexList = NIL;
 
@@ -1682,7 +1764,7 @@ ContainsUnionSubquery(Query *queryTree)
 		return true;
 	}
 
-	return ContainsUnionSubquery(subqueryTree);
+	return false;
 }
 
 

@@ -23,6 +23,7 @@ extern bool AllDistributionKeysInQueryAreEqual(Query *originalQuery,
 extern bool SafeToPushdownUnionSubquery(PlannerRestrictionContext *
 										plannerRestrictionContext);
 extern bool ContainsUnionSubquery(Query *queryTree);
+extern bool IsUnionSubquery(Query *queryTree);
 extern bool RestrictionEquivalenceForPartitionKeys(PlannerRestrictionContext *
 												   plannerRestrictionContext);
 bool RestrictionEquivalenceForPartitionKeysViaEquivalences(PlannerRestrictionContext *
