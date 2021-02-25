@@ -1889,7 +1889,7 @@ FindTargetAppendRelInfo(PlannerInfo *root, int relationRteIndex)
 		 * We're only interested in the child rel that is equal to the
 		 * relation we're investigating.
 		 */
-		if (appendRelInfo->child_relid - rtoffset == relationRteIndex)
+		if (rtoffset == relationRteIndex)
 		{
 			return appendRelInfo;
 		}

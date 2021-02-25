@@ -391,7 +391,7 @@ RangeTableOffsetCompat(PlannerInfo *root, AppendRelInfo *appendRelInfo)
 		}
 	}
 	int indexInRtable = (i - 1);
-	return appendRelInfo->parent_relid - 1 - (indexInRtable);
+	return appendRelInfo->parent_relid - appendRelInfo->child_relid;
 	#else
 	return 0;
 	#endif
@@ -1358,10 +1358,9 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		{
 			continue;
 		}
-		int rtoffset = RangeTableOffsetCompat(root, appendRelInfo);
 
 		/* set the varno accordingly for this specific child */
-		varToBeAdded->varno = appendRelInfo->child_relid - rtoffset;
+		varToBeAdded->varno = RangeTableOffsetCompat(root, appendRelInfo);
 
 		AddToAttributeEquivalenceClass(attributeEquivalenceClass, root,
 									   varToBeAdded);
