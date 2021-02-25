@@ -1290,8 +1290,8 @@ AddRteSubqueryToAttributeEquivalenceClass(AttributeEquivalenceClass
 	 */
 	if (rangeTableEntry->inh)
 	{
-		/*AddUnionAllSetOperationsToAttributeEquivalenceClass(attributeEquivalenceClass, */
-		/*													root, varToBeAdded); */
+		AddUnionAllSetOperationsToAttributeEquivalenceClass(attributeEquivalenceClass,
+															root, varToBeAdded);
 	}
 	else if (targetSubquery->setOperations)
 	{
@@ -1360,6 +1360,7 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 													PlannerInfo *root,
 													Var *varToBeAdded)
 {
+	return;
 	List *appendRelList = root->append_rel_list;
 	ListCell *appendRelCell = NULL;
 
