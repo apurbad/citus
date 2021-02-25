@@ -1290,8 +1290,8 @@ AddRteSubqueryToAttributeEquivalenceClass(AttributeEquivalenceClass
 	 */
 	if (rangeTableEntry->inh)
 	{
-		AddUnionAllSetOperationsToAttributeEquivalenceClass(attributeEquivalenceClass,
-															root, varToBeAdded);
+		/*AddUnionAllSetOperationsToAttributeEquivalenceClass(attributeEquivalenceClass, */
+		/*													root, varToBeAdded); */
 	}
 	else if (targetSubquery->setOperations)
 	{
