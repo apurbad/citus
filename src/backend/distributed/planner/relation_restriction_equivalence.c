@@ -287,7 +287,11 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
 			/* union does not have partition key in the target list */
 			if (partitionKeyIndex == 0)
 			{
-				continue;
+				/*
+				 * If a UNION ALL query doesn't have the partition key, we cannot
+				 * pushdown the query anyway, bail out early.
+				 */
+				return false;
 			}
 		}
 		else
@@ -298,13 +302,21 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
 			/* union does not have partition key in the target list */
 			if (partitionKeyIndex == 0)
 			{
-				continue;
+				/*
+				 * If a UNION ALL query doesn't have the partition key, we cannot
+				 * pushdown the query anyway, bail out early.
+				 */
+				return false;
 			}
 
 			targetEntryToAdd = list_nth(targetList, partitionKeyIndex - 1);
 			if (!IsA(targetEntryToAdd->expr, Var))
 			{
-				continue;
+				/*
+				 * If a UNION ALL query doesn't have the partition key, we cannot
+				 * pushdown the query anyway, bail out early.
+				 */
+				return false;
 			}
 
 			varToBeAdded = (Var *) targetEntryToAdd->expr;
@@ -315,7 +327,11 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
 		 */
 		if (partitionKeyIndex == InvalidAttrNumber)
 		{
-			continue;
+			/*
+			 * If a UNION ALL query doesn't have the partition key, we cannot
+			 * pushdown the query anyway, bail out early.
+			 */
+			return false;
 		}
 
 		/*
@@ -329,7 +345,11 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
 		}
 		else if (unionQueryPartitionKeyIndex != partitionKeyIndex)
 		{
-			continue;
+			/*
+			 * If a UNION ALL query doesn't have the partition key, we cannot
+			 * pushdown the query anyway, bail out early.
+			 */
+			return false;
 		}
 
 		Assert(varToBeAdded != NULL);
@@ -1377,6 +1397,7 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 			continue;
 		}
 		int rtoffset = RangeTableOffsetCompat(root, appendRelInfo);
+
 
 		/* set the varno accordingly for this specific child */
 		varToBeAdded->varno = appendRelInfo->child_relid - rtoffset;
