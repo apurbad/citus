@@ -378,20 +378,24 @@ SafeToPushdownUnionSubquery(PlannerRestrictionContext *plannerRestrictionContext
  * For PG < 13 this is a no op.
  */
 int
-RangeTableOffsetCompat(PlannerInfo *root, AppendRelInfo *appendRelInfo)
+RangeTableOffsetCompat(PlannerInfo *root, AppendRelInfo *childAppendRelInfo)
 {
-	#if PG_VERSION_NUM >= PG_VERSION_13
-	int i = 1;
-	for (; i < root->simple_rel_array_size; i++)
+#if PG_VERSION_NUM >= PG_VERSION_13
+
+	AppendRelInfo *appendRelInfo = NULL;
+	int childCount = 0;
+	foreach_ptr(appendRelInfo, root->append_rel_list)
 	{
-		RangeTblEntry *rte = root->simple_rte_array[i];
-		if (rte->inh)
+		if (appendRelInfo->parent_relid == childAppendRelInfo->parent_relid)
 		{
-			break;
+			childCount++;
+
+			if (childAppendRelInfo == appendRelInfo)
+				break;
 		}
 	}
-	int indexInRtable = (i - 1);
-	return appendRelInfo->parent_relid - 1 - (indexInRtable);
+
+	return childAppendRelInfo->child_relid;
 	#else
 	return 0;
 	#endif
@@ -1358,10 +1362,9 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		{
 			continue;
 		}
-		int rtoffset = RangeTableOffsetCompat(root, appendRelInfo);
 
 		/* set the varno accordingly for this specific child */
-		varToBeAdded->varno = appendRelInfo->child_relid - rtoffset;
+		varToBeAdded->varno = RangeTableOffsetCompat(root, appendRelInfo);
 
 		AddToAttributeEquivalenceClass(attributeEquivalenceClass, root,
 									   varToBeAdded);
