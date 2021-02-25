@@ -1369,6 +1369,8 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 	List *appendRelList = root->append_rel_list;
 	ListCell *appendRelCell = NULL;
 
+	Index unionQueryPartitionKeyIndex = 0;
+
 	/* iterate on the queries that are part of UNION ALL subqueries */
 	foreach(appendRelCell, appendRelList)
 	{
@@ -1384,11 +1386,53 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		}
 		int rtoffset = RangeTableOffsetCompat(root, appendRelInfo);
 
-		/* set the varno accordingly for this specific child */
-		varToBeAdded->varno = appendRelInfo->child_relid - rtoffset;
 
-		AddToAttributeEquivalenceClass(attributeEquivalenceClass, root,
-									   varToBeAdded);
+		RangeTblEntry *rte = root->simple_rte_array[appendRelInfo->child_relid];
+		if (rte->rtekind == RTE_RELATION)
+		{
+			Index partitionKeyIndex = 0;
+			Var *varOnUnionAllSubquery =
+				FindUnionAllVar(root, appendRelList,
+								rte->relid, appendRelInfo->child_relid,
+								&partitionKeyIndex);
+
+			if (partitionKeyIndex == 0)
+			{
+				/* no partition key on the target list */
+				continue;
+			}
+
+			if (unionQueryPartitionKeyIndex == 0)
+			{
+				unionQueryPartitionKeyIndex = partitionKeyIndex;
+			}
+			else if (unionQueryPartitionKeyIndex != partitionKeyIndex)
+			{
+				/*
+				 * Partition keys on the leaves of the UNION ALL queries on
+				 * different ordinal positions. We cannot pushdown, so skip.
+				 */
+				continue;
+			}
+
+			if (varOnUnionAllSubquery != NULL)
+			{
+				varOnUnionAllSubquery->varno -= rtoffset;
+
+				AddToAttributeEquivalenceClass(attributeEquivalenceClass, root,
+											   varOnUnionAllSubquery);
+			}
+		}
+		else if (rte->inh)
+		{ }
+		else
+		{
+			/* set the varno accordingly for this specific child */
+			varToBeAdded->varno = appendRelInfo->child_relid - rtoffset;
+
+			AddToAttributeEquivalenceClass(attributeEquivalenceClass, root,
+										   varToBeAdded);
+		}
 	}
 }
 
