@@ -439,7 +439,6 @@ FindUnionAllVar(PlannerInfo *root, List *translatedVars, Oid relationOid,
 	foreach(translatedVarCell, translatedVars)
 	{
 		Node *targetNode = (Node *) lfirst(translatedVarCell);
-
 		childAttrNumber++;
 
 		if (!IsA(targetNode, Var))
@@ -1241,7 +1240,8 @@ static void
 AddRteSubqueryToAttributeEquivalenceClass(AttributeEquivalenceClass
 										  **attributeEquivalenceClass,
 										  RangeTblEntry *rangeTableEntry,
-										  PlannerInfo *root, Var *varToBeAdded)
+										  PlannerInfo *root,
+										  Var *varToBeAdded)
 {
 	RelOptInfo *baseRelOptInfo = find_base_rel(root, varToBeAdded->varno);
 	Query *targetSubquery = GetTargetSubquery(root, rangeTableEntry, varToBeAdded);
@@ -1386,13 +1386,12 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		}
 		int rtoffset = RangeTableOffsetCompat(root, appendRelInfo);
 
-
 		RangeTblEntry *rte = root->simple_rte_array[appendRelInfo->child_relid];
 		if (rte->rtekind == RTE_RELATION)
 		{
 			Index partitionKeyIndex = 0;
 			Var *varOnUnionAllSubquery =
-				FindUnionAllVar(root, appendRelList,
+				FindUnionAllVar(root, appendRelInfo->translated_vars,
 								rte->relid, appendRelInfo->child_relid,
 								&partitionKeyIndex);
 
