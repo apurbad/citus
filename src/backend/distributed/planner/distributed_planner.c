@@ -126,7 +126,6 @@ static PlannedStmt * PlanFastPathDistributedStmt(DistributedPlanningContext *pla
 static PlannedStmt * PlanDistributedStmt(DistributedPlanningContext *planContext,
 										 int rteIdCounter);
 static RTEListProperties * GetRTEListProperties(List *rangeTableList);
-static List * TranslatedVars(PlannerInfo *root, int relationIndex);
 
 
 /* Distributed planner hook */
@@ -1846,7 +1845,7 @@ multi_relation_restriction_hook(PlannerInfo *root, RelOptInfo *relOptInfo,
  * TranslatedVars deep copies the translated vars for the given relation index
  * if there is any append rel list.
  */
-static List *
+List *
 TranslatedVars(PlannerInfo *root, int relationIndex)
 {
 	List *translatedVars = NIL;

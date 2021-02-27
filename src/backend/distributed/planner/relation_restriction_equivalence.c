@@ -585,7 +585,6 @@ GenerateAllAttributeEquivalences(PlannerRestrictionContext *plannerRestrictionCo
 	JoinRestrictionContext *joinRestrictionContext =
 		plannerRestrictionContext->joinRestrictionContext;
 
-
 	/* reset the equivalence id counter per call to prevent overflows */
 	attributeEquivalenceId = 1;
 
@@ -1389,9 +1388,10 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		RangeTblEntry *rte = root->simple_rte_array[appendRelInfo->child_relid];
 		if (rte->rtekind == RTE_RELATION)
 		{
+			List *l = TranslatedVars(root, appendRelInfo->child_relid);
 			Index partitionKeyIndex = 0;
 			Var *varOnUnionAllSubquery =
-				FindUnionAllVar(root, appendRelInfo->translated_vars,
+				FindUnionAllVar(root, l,
 								rte->relid, appendRelInfo->child_relid,
 								&partitionKeyIndex);
 
@@ -1423,7 +1423,9 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 			}
 		}
 		else if (rte->inh)
-		{ }
+		{
+			continue;
+		}
 		else
 		{
 			/* set the varno accordingly for this specific child */
