@@ -1388,11 +1388,11 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		RangeTblEntry *rte = root->simple_rte_array[appendRelInfo->child_relid];
 		if (rte->rtekind == RTE_RELATION)
 		{
-			List *l = TranslatedVars(root, appendRelInfo->child_relid);
+			List *l = TranslatedVars(root, appendRelInfo->child_relid - rtoffset);
 			Index partitionKeyIndex = 0;
 			Var *varOnUnionAllSubquery =
 				FindUnionAllVar(root, l,
-								rte->relid, appendRelInfo->child_relid,
+								rte->relid, appendRelInfo->child_relid - rtoffset,
 								&partitionKeyIndex);
 
 			if (partitionKeyIndex == 0)
