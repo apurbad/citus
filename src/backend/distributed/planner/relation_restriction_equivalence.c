@@ -163,6 +163,9 @@ static Relids QueryRteIdentities(Query *queryTree);
 static int ParentCountPriorToAppendRel(List *appendRelList, AppendRelInfo *appendRelInfo);
 #endif
 
+
+static PlannerRestrictionContext *currentPlannerRestictionContext = NULL;
+
 /*
  * AllDistributionKeysInQueryAreEqual returns true if either
  *    (i)  there exists join in the query and all relations joined on their
@@ -187,6 +190,8 @@ AllDistributionKeysInQueryAreEqual(Query *originalQuery,
 	{
 		return false;
 	}
+
+	currentPlannerRestictionContext = plannerRestrictionContext;
 
 	bool restrictionEquivalenceForPartitionKeys =
 		RestrictionEquivalenceForPartitionKeys(plannerRestrictionContext);
@@ -494,6 +499,8 @@ FindUnionAllVar(PlannerInfo *root, List *translatedVars, Oid relationOid,
 bool
 RestrictionEquivalenceForPartitionKeys(PlannerRestrictionContext *restrictionContext)
 {
+	currentPlannerRestictionContext = restrictionContext;
+
 	if (ContextContainsLocalRelation(restrictionContext->relationRestrictionContext))
 	{
 		return false;
@@ -1388,7 +1395,19 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		RangeTblEntry *rte = root->simple_rte_array[appendRelInfo->child_relid];
 		if (rte->rtekind == RTE_RELATION)
 		{
-			List *l = TranslatedVars(root, appendRelInfo->child_relid - rtoffset);
+			List *l = NIL;
+			List *relList =
+				currentPlannerRestictionContext->relationRestrictionContext->
+				relationRestrictionList;
+			RelationRestriction *r = NULL;
+			foreach_ptr(r, relList)
+			{
+				if (GetRTEIdentity(r->rte) == GetRTEIdentity(rte))
+				{
+					l = r->translatedVars;
+				}
+			}
+
 			Index partitionKeyIndex = 0;
 			Var *varOnUnionAllSubquery =
 				FindUnionAllVar(root, l,
