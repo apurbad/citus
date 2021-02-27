@@ -1392,7 +1392,8 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 		}
 		int rtoffset = RangeTableOffsetCompat(root, appendRelInfo);
 
-		RangeTblEntry *rte = root->simple_rte_array[appendRelInfo->child_relid];
+		RangeTblEntry *rte = root->simple_rte_array[appendRelInfo->child_relid -
+													rtoffset];
 		if (rte->rtekind == RTE_RELATION)
 		{
 			List *l = NIL;
@@ -1413,7 +1414,6 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 				FindUnionAllVar(root, l,
 								rte->relid, appendRelInfo->child_relid - rtoffset,
 								&partitionKeyIndex);
-
 			if (partitionKeyIndex == 0)
 			{
 				/* no partition key on the target list */
@@ -1435,8 +1435,6 @@ AddUnionAllSetOperationsToAttributeEquivalenceClass(AttributeEquivalenceClass **
 
 			if (varOnUnionAllSubquery != NULL)
 			{
-				varOnUnionAllSubquery->varno -= rtoffset;
-
 				AddToAttributeEquivalenceClass(attributeEquivalenceClass, root,
 											   varOnUnionAllSubquery);
 			}
